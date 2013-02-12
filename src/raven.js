@@ -458,6 +458,8 @@ function isSetup() {
 }
 
 function wrapArguments(what) {
+    if (!isFunction(what)) return what;
+
     function wrapped() {
         var args = [], i = arguments.length, arg;
         while(i--) {

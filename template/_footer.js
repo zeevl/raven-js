@@ -7,8 +7,8 @@ if (isFunction(window.define) && define.amd) {
     // export Raven before we wrap
     define(function() { return Raven; });
 
-    define = wrapArguments(define);
-    require = wrapArguments(require);
+    window.define = wrapArguments(window.define);
+    window.require = wrapArguments(window.require);
 }
 
 })(window);
