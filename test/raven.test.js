@@ -223,7 +223,7 @@ describe('globals', function() {
 
     describe('setAuthQueryString', function() {
         it('should return a properly formatted string and cache it', function() {
-            var expected = '?sentry_version=4&sentry_client=raven-js/<%= pkg.version %>&sentry_key=abc';
+            var expected = '?sentry_version=6&sentry_client=raven-js/<%= pkg.version %>&sentry_key=abc';
             setAuthQueryString();
             assert.strictEqual(authQueryString, expected);
         });
@@ -503,39 +503,45 @@ describe('globals', function() {
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, frames.slice(0), {});
             assert.deepEqual(window.send.lastCall.args, [{
-                exception: {
-                    type: 'Error',
-                    value: 'lol'
-                },
-                stacktrace: {
-                    frames: framesFlipped
-                },
+                events: [{
+                    exception: {
+                        exc_type: 'Error',
+                        value: 'lol',
+                        stacktrace: {
+                            frames: framesFlipped
+                        }
+                    }
+                }],
                 culprit: 'http://example.com/file1.js',
                 message: 'lol at 10'
             }]);
 
             processException('Error', 'lol', '', 10, frames.slice(0), {});
             assert.deepEqual(window.send.lastCall.args, [{
-                exception: {
-                    type: 'Error',
-                    value: 'lol'
-                },
-                stacktrace: {
-                    frames: framesFlipped
-                },
+                events: [{
+                     exception: {
+                         exc_type: 'Error',
+                         value: 'lol',
+                         stacktrace: {
+                             frames: framesFlipped
+                         }
+                     }
+                 }],
                 culprit: 'http://example.com/file1.js',
                 message: 'lol at 10'
             }]);
 
             processException('Error', 'lol', '', 10, frames.slice(0), {extra: 'awesome'});
             assert.deepEqual(window.send.lastCall.args, [{
-                exception: {
-                    type: 'Error',
-                    value: 'lol'
-                },
-                stacktrace: {
-                    frames: framesFlipped
-                },
+                events: [{
+                    exception: {
+                        exc_type: 'Error',
+                        value: 'lol',
+                        stacktrace: {
+                            frames: framesFlipped
+                        }
+                    }
+                }],
                 culprit: 'http://example.com/file1.js',
                 message: 'lol at 10',
                 extra: 'awesome'
@@ -547,48 +553,54 @@ describe('globals', function() {
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, [], {});
             assert.deepEqual(window.send.lastCall.args, [{
-                exception: {
-                    type: 'Error',
-                    value: 'lol'
-                },
-                stacktrace: {
-                    frames: [{
-                        filename: 'http://example.com/override.js',
-                        lineno: 10
-                    }]
-                },
+                events: [{
+                    exception: {
+                        exc_type: 'Error',
+                        value: 'lol',
+                        stacktrace: {
+                            frames: [{
+                                filename: 'http://example.com/override.js',
+                                lineno: 10
+                            }]
+                        }
+                    }
+                }],
                 culprit: 'http://example.com/override.js',
                 message: 'lol at 10'
             }]);
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, [], {});
             assert.deepEqual(window.send.lastCall.args, [{
-                exception: {
-                    type: 'Error',
-                    value: 'lol'
-                },
-                stacktrace: {
-                    frames: [{
-                        filename: 'http://example.com/override.js',
-                        lineno: 10
-                    }]
-                },
+                events: [{
+                    exception: {
+                        exc_type: 'Error',
+                        value: 'lol',
+                        stacktrace: {
+                            frames: [{
+                                filename: 'http://example.com/override.js',
+                                lineno: 10
+                            }]
+                        }
+                    }
+                }],
                 culprit: 'http://example.com/override.js',
                 message: 'lol at 10'
             }]);
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, [], {extra: 'awesome'});
             assert.deepEqual(window.send.lastCall.args, [{
-                exception: {
-                    type: 'Error',
-                    value: 'lol'
-                },
-                stacktrace: {
-                    frames: [{
-                        filename: 'http://example.com/override.js',
-                        lineno: 10
-                    }]
-                },
+                events: [{
+                    exception: {
+                        exc_type: 'Error',
+                        value: 'lol',
+                        stacktrace: {
+                            frames: [{
+                                filename: 'http://example.com/override.js',
+                                lineno: 10
+                            }]
+                        }
+                    }
+                }],
                 culprit: 'http://example.com/override.js',
                 message: 'lol at 10',
                 extra: 'awesome'
@@ -639,7 +651,7 @@ describe('globals', function() {
                         'User-Agent': 'lolbrowser'
                     }
                 },
-                event_id: 'abc123',
+                id: 'abc123',
                 foo: 'bar'
             });
         });
@@ -672,7 +684,7 @@ describe('globals', function() {
                         'User-Agent': 'lolbrowser'
                     }
                 },
-                event_id: 'abc123',
+                id: 'abc123',
                 user: {
                     name: 'Matt'
                 },
@@ -708,7 +720,7 @@ describe('globals', function() {
                         'User-Agent': 'lolbrowser'
                     }
                 },
-                event_id: 'abc123',
+                id: 'abc123',
                 tags: {tag1: 'value1', tag2: 'value2'}
             }]);
         });
@@ -741,7 +753,7 @@ describe('globals', function() {
                         'User-Agent': 'lolbrowser'
                     }
                 },
-                event_id: 'abc123',
+                id: 'abc123',
                 extra: {key1: 'value1', key2: 'value2'}
             }]);
         });
@@ -764,7 +776,7 @@ describe('globals', function() {
             send({foo: 'bar'});
             assert.deepEqual(window.makeRequest.lastCall.args, [{
                 lol: 'ibrokeit',
-                event_id: 'abc123',
+                id: 'abc123',
             }]);
         });
 
@@ -796,7 +808,7 @@ describe('globals', function() {
                         'User-Agent': 'lolbrowser'
                     }
                 },
-                event_id: 'abc123',
+                id: 'abc123',
                 foo: 'bar'
             });
         });
@@ -1282,7 +1294,7 @@ describe('Raven (public API)', function() {
             this.sinon.stub(window, 'send');
             Raven.captureMessage('lol', {foo: 'bar'});
             assert.deepEqual(window.send.lastCall.args, [{
-                message: 'lol',
+                events: [{message: 'lol'}],
                 foo: 'bar'
             }]);
         });

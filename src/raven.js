@@ -186,7 +186,7 @@ var Raven = {
 
         // copy over properties of the old function
         for (var property in func) {
-            if (func.hasOwnProperty(property)) {
+            if (hasKey(func, property)) {
                 wrapped[property] = func[property];
             }
         }
@@ -251,7 +251,7 @@ var Raven = {
         // Fire away!
         send(
             objectMerge({
-                message: msg
+                events: [{message: msg}]
             }, options)
         );
 
@@ -304,7 +304,7 @@ function triggerEvent(eventType, options) {
         event.eventType = eventType;
     }
 
-    for (key in options) if (options.hasOwnProperty(key)) {
+    for (key in options) if (hasKey(options, key)) {
         event[key] = options[key];
     }
 
@@ -381,7 +381,7 @@ function each(obj, callback) {
 
     if (isUndefined(obj.length)) {
         for (i in obj) {
-            if (obj.hasOwnProperty(i)) {
+            if (hasKey(obj, i)) {
                 callback.call(null, i, obj[i]);
             }
         }
@@ -398,7 +398,7 @@ function each(obj, callback) {
 
 function setAuthQueryString() {
     authQueryString =
-        '?sentry_version=4' +
+        '?sentry_version=6' +
         '&sentry_client=raven-js/' + Raven.VERSION +
         '&sentry_key=' + globalKey;
 }
@@ -534,13 +534,14 @@ function processException(type, message, fileurl, lineno, frames, options) {
     // Fire away!
     send(
         objectMerge({
-            // sentry.interfaces.Exception
-            exception: {
-                type: type,
-                value: message
-            },
-            // sentry.interfaces.Stacktrace
-            stacktrace: stacktrace,
+            events: [{
+                // sentry.interfaces.Exception
+                exception: {
+                    exc_type: type,
+                    value: message,
+                    stacktrace: stacktrace
+                }
+            }],
             culprit: fileurl,
             message: label
         }, options)
@@ -588,6 +589,12 @@ function send(data) {
     data.tags = objectMerge(globalOptions.tags, data.tags);
     data.extra = objectMerge(globalOptions.extra, data.extra);
 
+    // Pass along a transaction id if it's set explicitly
+    // If not, let the server generate one
+    if (!isUndefined(globalOptions.transaction)) {
+        data.transaction = globalOptions.transaction;
+    }
+
     // If there are no tags/extra, strip the key from the payload alltogther.
     if (isEmptyObject(data.tags)) delete data.tags;
     if (isEmptyObject(data.extra)) delete data.extra;
@@ -609,7 +616,7 @@ function send(data) {
     // Send along an event_id if not explicitly passed.
     // This event_id can be used to reference the error within Sentry itself.
     // Set lastEventId after we know the error should actually be sent
-    lastEventId = data.event_id || (data.event_id = uuid4());
+    lastEventId = data.id || (data.id = uuid4());
 
     makeRequest(data);
 }
