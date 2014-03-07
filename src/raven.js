@@ -62,6 +62,10 @@ var Raven = {
         // merge in options
         globalOptions = objectMerge(globalOptions, options);
 
+        if (isUndefined(globalOptions.transaction)) {
+            globalOptions.transaction = uuid4();
+        }
+
         // "Script error." is hard coded into browsers for errors that it can't read.
         // this is the result of a script being pulled in from an external domain and CORS.
         globalOptions.ignoreErrors.push('Script error.');
@@ -674,6 +678,7 @@ function capture(options) {
     var data = objectMerge({
         logger: globalOptions.logger,
         site: globalOptions.site,
+        transaction: globalOptions.transaction,
         platform: 'javascript',
         events: timeline,
     }, options);
@@ -689,12 +694,6 @@ function capture(options) {
     // Merge in the tags and extra separately since objectMerge doesn't handle a deep merge
     data.tags = objectMerge(globalOptions.tags, data.tags);
     data.extra = objectMerge(getExtraBrowserData(), objectMerge(globalOptions.extra, data.extra));
-
-    // Pass along a transaction id if it's set explicitly
-    // If not, let the server generate one
-    if (!isUndefined(globalOptions.transaction)) {
-        data.transaction = globalOptions.transaction;
-    }
 
     // If there are no tags, strip the key from the payload alltogther.
     if (isEmptyObject(data.tags)) delete data.tags;
