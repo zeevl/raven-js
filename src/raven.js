@@ -10,7 +10,6 @@ var _Raven = window.Raven,
     globalServer,
     globalUser,
     globalKey,
-    globalProject,
     globalOptions = {
         logger: 'javascript',
         ignoreErrors: [],
@@ -21,7 +20,11 @@ var _Raven = window.Raven,
         tags: {},
         extra: {}
     },
+    timeline = [],
     authQueryString;
+
+// Local reference to window.document
+var doc = window.document;
 
 /*
  * The core Raven singleton
@@ -57,11 +60,7 @@ var Raven = {
             path = uri.path.substr(1, lastSlash);
 
         // merge in options
-        if (options) {
-            each(options, function(key, value){
-                globalOptions[key] = value;
-            });
-        }
+        globalOptions = objectMerge(globalOptions, options);
 
         // "Script error." is hard coded into browsers for errors that it can't read.
         // this is the result of a script being pulled in from an external domain and CORS.
@@ -75,12 +74,11 @@ var Raven = {
         globalOptions.includePaths = joinRegExp(globalOptions.includePaths);
 
         globalKey = uri.user;
-        globalProject = uri.path.substr(lastSlash + 1);
 
         // assemble the endpoint from the uri pieces
         globalServer = '//' + uri.host +
                       (uri.port ? ':' + uri.port : '') +
-                      '/' + path + 'api/' + globalProject + '/store/';
+                      '/' + path + 'api/' + uri.path.substr(lastSlash + 1) + '/store/';
 
         if (uri.protocol) {
             globalServer = uri.protocol + ':' + globalServer;
@@ -210,6 +208,25 @@ var Raven = {
         return Raven;
     },
 
+    addAction: function(action) {
+        action.type = action.type || 'message';
+        action.timestamp = action.timestamp || nowISO();
+        timeline.push(action);
+    },
+
+    addHttp: function() {
+        Raven.addAction(getHttpData());
+    },
+
+    addMessage: function(msg) {
+        Raven.addAction(isString(msg) ? {message: msg} : msg);
+    },
+
+    addException: function(exc) {
+        exc.type = 'exception';
+        Raven.addAction(exc);
+    },
+
     /*
      * Manually capture an exception and send it over to Sentry
      *
@@ -249,11 +266,8 @@ var Raven = {
      */
     captureMessage: function(msg, options) {
         // Fire away!
-        send(
-            objectMerge({
-                events: [{message: msg}]
-            }, options)
-        );
+        Raven.addMessage(msg, options);
+        capture(options);
 
         return Raven;
     },
@@ -268,6 +282,12 @@ var Raven = {
        globalUser = user;
 
        return Raven;
+    },
+
+    reset: function() {
+        timeline = [];
+
+        return Raven;
     },
 
     /*
@@ -296,11 +316,11 @@ function triggerEvent(eventType, options) {
 
     eventType = 'raven' + eventType.substr(0,1).toUpperCase() + eventType.substr(1);
 
-    if (document.createEvent) {
-        event = document.createEvent('HTMLEvents');
+    if (doc.createEvent) {
+        event = doc.createEvent('HTMLEvents');
         event.initEvent(eventType, true, true);
     } else {
-        event = document.createEventObject();
+        event = doc.createEventObject();
         event.eventType = eventType;
     }
 
@@ -308,14 +328,14 @@ function triggerEvent(eventType, options) {
         event[key] = options[key];
     }
 
-    if (document.createEvent) {
+    if (doc.createEvent) {
         // IE9 if standards
-        document.dispatchEvent(event);
+        doc.dispatchEvent(event);
     } else {
         // IE8 regardless of Quirks or Standards
         // IE9 if quirks
         try {
-            document.fireEvent('on' + event.eventType.toLowerCase(), event);
+            doc.fireEvent('on' + event.eventType.toLowerCase(), event);
         } catch(e) {}
     }
 }
@@ -377,20 +397,17 @@ function hasKey(object, key) {
 }
 
 function each(obj, callback) {
-    var i, j;
+    var i, j = obj.length;
 
-    if (isUndefined(obj.length)) {
+    if (isUndefined(j)) {
         for (i in obj) {
             if (hasKey(obj, i)) {
                 callback.call(null, i, obj[i]);
             }
         }
-    } else {
-        j = obj.length;
-        if (j) {
-            for (i = 0; i < j; i++) {
-                callback.call(null, i, obj[i]);
-            }
+    } else if (j) {
+        for (i = 0; i < j; i++) {
+            callback.call(null, i, obj[i]);
         }
     }
 }
@@ -531,17 +548,15 @@ function processException(type, message, fileurl, lineno, frames, options) {
 
     label = lineno ? message + ' at ' + lineno : message;
 
+    Raven.addException({
+        exc_type: type,
+        value: message,
+        stacktrace: stacktrace
+    });
+
     // Fire away!
-    send(
+    capture(
         objectMerge({
-            events: [{
-                // sentry.interfaces.Exception
-                exception: {
-                    exc_type: type,
-                    value: message,
-                    stacktrace: stacktrace
-                }
-            }],
             culprit: fileurl,
             message: label
         }, options)
@@ -558,36 +573,67 @@ function objectMerge(obj1, obj2) {
     return obj1;
 }
 
+function resolve(obj, val) {
+    try {
+        each(val.split('.'), function(i, val) {
+            obj = obj[val];
+        });
+    } catch(e) {
+        // Something didn't resolve correctly,
+        // so explicitly return undefined
+        return;
+    }
+    return obj;
+}
+
 function getHttpData() {
     var http = {
-        url: document.location.href,
+        type: 'http_request',
+        url: doc.location.href,
         headers: {
             'User-Agent': navigator.userAgent
         }
     };
 
-    if (document.referrer) {
-        http.headers.Referer = document.referrer;
+    if (doc.referrer) {
+        http.headers.Referer = doc.referrer;
     }
 
     return http;
 }
 
-function send(data) {
-    if (!isSetup()) return;
+function getExtraBrowserData() {
+    var props = {
+            window: ['innerHeight', 'innerWidth'],
+            document: []
+        },
+        data = {};
 
-    data = objectMerge({
-        project: globalProject,
+    each(props, function(k, v) {
+        each(v, function(i, val) {
+            var resolved = resolve(k, val);
+            if (!isUndefined(resolved)) {
+                data['window.' + val] = resolved;
+            }
+        });
+    });
+
+    return data;
+}
+
+function capture(options) {
+    if (!isSetup() || !timeline) return;
+
+    var data = objectMerge({
         logger: globalOptions.logger,
         site: globalOptions.site,
         platform: 'javascript',
-        // sentry.interfaces.Http
-        request: getHttpData()
-    }, data);
+        events: timeline,
+    }, options);
 
     // Merge in the tags and extra separately since objectMerge doesn't handle a deep merge
     data.tags = objectMerge(globalOptions.tags, data.tags);
-    data.extra = objectMerge(globalOptions.extra, data.extra);
+    data.extra = objectMerge(getExtraBrowserData(), objectMerge(globalOptions.extra, data.extra));
 
     // Pass along a transaction id if it's set explicitly
     // If not, let the server generate one
@@ -595,9 +641,8 @@ function send(data) {
         data.transaction = globalOptions.transaction;
     }
 
-    // If there are no tags/extra, strip the key from the payload alltogther.
+    // If there are no tags, strip the key from the payload alltogther.
     if (isEmptyObject(data.tags)) delete data.tags;
-    if (isEmptyObject(data.extra)) delete data.extra;
 
     if (globalUser) {
         // sentry.interfaces.User
@@ -618,11 +663,11 @@ function send(data) {
     // Set lastEventId after we know the error should actually be sent
     lastEventId = data.id || (data.id = uuid4());
 
-    makeRequest(data);
+    send(data);
 }
 
 
-function makeRequest(data) {
+function send(data) {
     var img = new Image(),
         src = globalServer + authQueryString + '&sentry_data=' + encodeURIComponent(JSON.stringify(data));
 
@@ -683,11 +728,30 @@ function uuid4() {
     });
 }
 
+function pad(number) {
+    if (number < 10) return '0' + number;
+    return number;
+}
+
+function nowISO() {
+    var now = new Date();
+    return now.getUTCFullYear() +
+        '-' + pad(now.getUTCMonth() + 1) +
+        '-' + pad(now.getUTCDate() ) +
+        'T' + pad(now.getUTCHours() ) +
+        ':' + pad(now.getUTCMinutes() ) +
+        ':' + pad(now.getUTCSeconds() ) +
+        '.' + (now.getUTCMilliseconds() / 1000).toFixed(3).slice(2, 5) +
+        'Z';
+}
+
 function afterLoad() {
     // Attempt to initialize Raven on load
     var RavenConfig = window.RavenConfig;
     if (RavenConfig) {
         Raven.config(RavenConfig.dsn, RavenConfig.config).install();
     }
+
+    Raven.addHttp();
 }
 afterLoad();

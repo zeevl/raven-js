@@ -1,11 +1,10 @@
 function flushRavenState() {
     authQueryString = undefined;
-    hasJSON = !isUndefined(window.JSON);
+    hasJSON = !!(window.JSON && window.JSON.stringify);
     lastCapturedException = undefined;
     lastEventId = undefined;
     globalServer = undefined;
     globalUser = undefined;
-    globalProject = undefined;
     globalOptions = {
         logger: 'javascript',
         ignoreErrors: [],
@@ -16,6 +15,8 @@ function flushRavenState() {
         tags: {},
         extra: {}
     };
+    timeline = [];
+    authQueryString = undefined;
     Raven.uninstall();
 }
 
@@ -40,13 +41,17 @@ function uuid4() {
     return 'abc123';
 }
 
+function nowISO() {
+    return '1969-01-01T00:00:00.000Z';
+}
+
 describe('TraceKit', function(){
     describe('error notifications', function(){
         var testMessage = "__mocha_ignore__";
         var subscriptionHandler;
         // TraceKit waits 2000ms for window.onerror to fire, so give the tests
         // some extra time.
-        this.timeout(3000);
+        this.timeout(2020);
 
         before(function() {
             // Prevent the onerror call that's part of our tests from getting to
@@ -117,7 +122,8 @@ describe('TraceKit', function(){
                     it('it should receive arguments from report() when' +
                        ' collectWindowErrors is ' + collectWindowErrors +
                        ' and callOnError is ' + callOnError +
-                       ' and numReports is ' + numReports, function(done) {
+                       ' and numReports is ' + numReports +
+                       ' #slow', function(done) {
                         testErrorNotification(collectWindowErrors, callOnError, numReports, done);
                     });
                 });
@@ -197,6 +203,20 @@ describe('globals', function() {
             assert.deepEqual(objectMerge({}, {}), {});
             assert.deepEqual(objectMerge({a:1}, {b:2}), {a:1, b:2});
             assert.deepEqual(objectMerge({a:1}), {a:1});
+        });
+    });
+
+    describe('resolve', function() {
+        it('should work as advertised', function() {
+            var data = {
+                a: 1,
+                b: {
+                    c: 2
+                }
+            };
+            assert.equal(resolve(data, 'a'), 1);
+            assert.equal(resolve(data, 'b.c'), 2);
+            assert.isUndefined(resolve(data, 'foo.bar'));
         });
     });
 
@@ -452,43 +472,43 @@ describe('globals', function() {
 
     describe('processException', function() {
         it('should respect `ignoreErrors`', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(window, 'capture');
 
             globalOptions.ignoreErrors = joinRegExp(['e1', 'e2']);
             processException('Error', 'e1', 'http://example.com', []);
-            assert.isFalse(window.send.called);
+            assert.isFalse(window.capture.called);
             processException('Error', 'e2', 'http://example.com', []);
-            assert.isFalse(window.send.called);
+            assert.isFalse(window.capture.called);
             processException('Error', 'error', 'http://example.com', []);
-            assert.isTrue(window.send.calledOnce);
+            assert.isTrue(window.capture.calledOnce);
         });
 
         it('should respect `ignoreUrls`', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(window, 'capture');
 
             globalOptions.ignoreUrls = joinRegExp([/.+?host1.+/, /.+?host2.+/]);
             processException('Error', 'error', 'http://host1/', []);
-            assert.isFalse(window.send.called);
+            assert.isFalse(window.capture.called);
             processException('Error', 'error', 'http://host2/', []);
-            assert.isFalse(window.send.called);
+            assert.isFalse(window.capture.called);
             processException('Error', 'error', 'http://host3/', []);
-            assert.isTrue(window.send.calledOnce);
+            assert.isTrue(window.capture.calledOnce);
         });
 
         it('should respect `whitelistUrls`', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(window, 'capture');
 
             globalOptions.whitelistUrls = joinRegExp([/.+?host1.+/, /.+?host2.+/]);
             processException('Error', 'error', 'http://host1/', []);
-            assert.equal(window.send.callCount, 1);
+            assert.equal(window.capture.callCount, 1);
             processException('Error', 'error', 'http://host2/', []);
-            assert.equal(window.send.callCount, 2);
+            assert.equal(window.capture.callCount, 2);
             processException('Error', 'error', 'http://host3/', []);
-            assert.equal(window.send.callCount, 2);
+            assert.equal(window.capture.callCount, 2);
         });
 
         it('should send a proper payload with frames', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(window, 'capture');
 
             var frames = [
                 {
@@ -502,169 +522,156 @@ describe('globals', function() {
             framesFlipped.reverse();
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, frames.slice(0), {});
-            assert.deepEqual(window.send.lastCall.args, [{
-                events: [{
-                    exception: {
-                        exc_type: 'Error',
-                        value: 'lol',
-                        stacktrace: {
-                            frames: framesFlipped
-                        }
-                    }
-                }],
+            assert.isTrue(window.capture.called);
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                exc_type: 'Error',
+                value: 'lol',
+                stacktrace: {
+                    frames: framesFlipped
+                },
+                type: 'exception',
+                timestamp: nowISO()
+            });
+            assert.deepEqual(window.capture.lastCall.args, [{
                 culprit: 'http://example.com/file1.js',
                 message: 'lol at 10'
             }]);
+
+            timeline = [];
 
             processException('Error', 'lol', '', 10, frames.slice(0), {});
-            assert.deepEqual(window.send.lastCall.args, [{
-                events: [{
-                     exception: {
-                         exc_type: 'Error',
-                         value: 'lol',
-                         stacktrace: {
-                             frames: framesFlipped
-                         }
-                     }
-                 }],
+            assert.isTrue(window.capture.called);
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                exc_type: 'Error',
+                value: 'lol',
+                stacktrace: {
+                    frames: framesFlipped
+                },
+                type: 'exception',
+                timestamp: nowISO()
+            });
+            assert.deepEqual(window.capture.lastCall.args, [{
                 culprit: 'http://example.com/file1.js',
                 message: 'lol at 10'
             }]);
 
-            processException('Error', 'lol', '', 10, frames.slice(0), {extra: 'awesome'});
-            assert.deepEqual(window.send.lastCall.args, [{
-                events: [{
-                    exception: {
-                        exc_type: 'Error',
-                        value: 'lol',
-                        stacktrace: {
-                            frames: framesFlipped
-                        }
-                    }
-                }],
+            timeline = [];
+
+            processException('Error', 'lol', '', 10, frames.slice(0), {extra: {foo: 'bar'}});
+            assert.isTrue(window.capture.called);
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                exc_type: 'Error',
+                value: 'lol',
+                stacktrace: {
+                    frames: framesFlipped
+                },
+                type: 'exception',
+                timestamp: nowISO()
+            });
+            assert.deepEqual(window.capture.lastCall.args, [{
                 culprit: 'http://example.com/file1.js',
                 message: 'lol at 10',
-                extra: 'awesome'
+                extra: {foo: 'bar'}
             }]);
         });
 
         it('should send a proper payload without frames', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(window, 'capture');
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, [], {});
-            assert.deepEqual(window.send.lastCall.args, [{
-                events: [{
-                    exception: {
-                        exc_type: 'Error',
-                        value: 'lol',
-                        stacktrace: {
-                            frames: [{
-                                filename: 'http://example.com/override.js',
-                                lineno: 10
-                            }]
-                        }
-                    }
-                }],
+            assert.isTrue(window.capture.called);
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                exc_type: 'Error',
+                value: 'lol',
+                stacktrace: {
+                    frames: [{
+                        filename: 'http://example.com/override.js',
+                        lineno: 10
+                    }]
+                },
+                type: 'exception',
+                timestamp: nowISO()
+            });
+            assert.deepEqual(window.capture.lastCall.args, [{
                 culprit: 'http://example.com/override.js',
                 message: 'lol at 10'
             }]);
 
-            processException('Error', 'lol', 'http://example.com/override.js', 10, [], {});
-            assert.deepEqual(window.send.lastCall.args, [{
-                events: [{
-                    exception: {
-                        exc_type: 'Error',
-                        value: 'lol',
-                        stacktrace: {
-                            frames: [{
-                                filename: 'http://example.com/override.js',
-                                lineno: 10
-                            }]
-                        }
-                    }
-                }],
-                culprit: 'http://example.com/override.js',
-                message: 'lol at 10'
-            }]);
+            timeline = [];
 
-            processException('Error', 'lol', 'http://example.com/override.js', 10, [], {extra: 'awesome'});
-            assert.deepEqual(window.send.lastCall.args, [{
-                events: [{
-                    exception: {
-                        exc_type: 'Error',
-                        value: 'lol',
-                        stacktrace: {
-                            frames: [{
-                                filename: 'http://example.com/override.js',
-                                lineno: 10
-                            }]
-                        }
-                    }
-                }],
+            processException('Error', 'lol', 'http://example.com/override.js', 10, [], {extra: {foo: 'bar'}});
+            assert.isTrue(window.capture.called);
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                exc_type: 'Error',
+                value: 'lol',
+                stacktrace: {
+                    frames: [{
+                        filename: 'http://example.com/override.js',
+                        lineno: 10
+                    }]
+                },
+                type: 'exception',
+                timestamp: nowISO()
+            });
+            assert.deepEqual(window.capture.lastCall.args, [{
                 culprit: 'http://example.com/override.js',
                 message: 'lol at 10',
-                extra: 'awesome'
+                extra: {foo: 'bar'}
             }]);
         });
 
         it('should ignored falsey messages', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(window, 'capture');
 
             processException('Error', '', 'http://example.com', []);
-            assert.isFalse(window.send.called);
+            assert.isFalse(window.capture.called);
         });
     });
 
-    describe('send', function() {
+    describe('capture', function() {
         it('should check `isSetup`', function() {
             this.sinon.stub(window, 'isSetup').returns(false);
-            this.sinon.stub(window, 'makeRequest');
+            this.sinon.stub(window, 'send');
 
-            send();
+            capture();
             assert.isTrue(window.isSetup.calledOnce);
-            assert.isFalse(window.makeRequest.calledOnce);
+            assert.isFalse(window.send.calledOnce);
         });
 
         it('should build a good data payload', function() {
             this.sinon.stub(window, 'isSetup').returns(true);
-            this.sinon.stub(window, 'makeRequest');
-            this.sinon.stub(window, 'getHttpData').returns({
-                url: 'http://localhost/?a=b',
-                headers: {'User-Agent': 'lolbrowser'}
-            });
+            this.sinon.stub(window, 'send');
 
-            globalProject = '2';
             globalOptions = {
                 logger: 'javascript',
                 site: 'THE BEST'
             };
 
-            send({foo: 'bar'});
-            assert.deepEqual(window.makeRequest.lastCall.args[0], {
-                project: '2',
+            capture({foo: 'bar'});
+            assert.deepEqual(window.send.lastCall.args[0], {
                 logger: 'javascript',
                 site: 'THE BEST',
                 platform: 'javascript',
-                request: {
-                    url: 'http://localhost/?a=b',
-                    headers: {
-                        'User-Agent': 'lolbrowser'
-                    }
-                },
                 id: 'abc123',
-                foo: 'bar'
+                foo: 'bar',
+                extra: {},
+                events: []
             });
         });
 
         it('should build a good data payload with a User', function() {
             this.sinon.stub(window, 'isSetup').returns(true);
-            this.sinon.stub(window, 'makeRequest');
+            this.sinon.stub(window, 'send');
             this.sinon.stub(window, 'getHttpData').returns({
                 url: 'http://localhost/?a=b',
                 headers: {'User-Agent': 'lolbrowser'}
             });
 
-            globalProject = '2';
             globalOptions = {
                 logger: 'javascript',
                 site: 'THE BEST'
@@ -672,35 +679,29 @@ describe('globals', function() {
 
             globalUser = {name: 'Matt'};
 
-            send({foo: 'bar'});
-            assert.deepEqual(window.makeRequest.lastCall.args, [{
-                project: '2',
+            capture({foo: 'bar'});
+            assert.deepEqual(window.send.lastCall.args, [{
                 logger: 'javascript',
                 site: 'THE BEST',
                 platform: 'javascript',
-                request: {
-                    url: 'http://localhost/?a=b',
-                    headers: {
-                        'User-Agent': 'lolbrowser'
-                    }
-                },
                 id: 'abc123',
                 user: {
                     name: 'Matt'
                 },
-                foo: 'bar'
+                foo: 'bar',
+                extra: {},
+                events: []
             }]);
         });
 
         it('should merge in global tags', function() {
             this.sinon.stub(window, 'isSetup').returns(true);
-            this.sinon.stub(window, 'makeRequest');
+            this.sinon.stub(window, 'send');
             this.sinon.stub(window, 'getHttpData').returns({
                 url: 'http://localhost/?a=b',
                 headers: {'User-Agent': 'lolbrowser'}
             });
 
-            globalProject = '2';
             globalOptions = {
                 logger: 'javascript',
                 site: 'THE BEST',
@@ -708,32 +709,26 @@ describe('globals', function() {
             };
 
 
-            send({tags: {tag2: 'value2'}});
-            assert.deepEqual(window.makeRequest.lastCall.args, [{
-                project: '2',
+            capture({tags: {tag2: 'value2'}});
+            assert.deepEqual(window.send.lastCall.args, [{
                 logger: 'javascript',
                 site: 'THE BEST',
                 platform: 'javascript',
-                request: {
-                    url: 'http://localhost/?a=b',
-                    headers: {
-                        'User-Agent': 'lolbrowser'
-                    }
-                },
                 id: 'abc123',
-                tags: {tag1: 'value1', tag2: 'value2'}
+                tags: {tag1: 'value1', tag2: 'value2'},
+                events: [],
+                extra: {}
             }]);
         });
 
         it('should merge in global extra', function() {
             this.sinon.stub(window, 'isSetup').returns(true);
-            this.sinon.stub(window, 'makeRequest');
+            this.sinon.stub(window, 'send');
             this.sinon.stub(window, 'getHttpData').returns({
                 url: 'http://localhost/?a=b',
                 headers: {'User-Agent': 'lolbrowser'}
             });
 
-            globalProject = '2';
             globalOptions = {
                 logger: 'javascript',
                 site: 'THE BEST',
@@ -741,29 +736,22 @@ describe('globals', function() {
             };
 
 
-            send({extra: {key2: 'value2'}});
-            assert.deepEqual(window.makeRequest.lastCall.args, [{
-                project: '2',
+            capture({extra: {key2: 'value2'}});
+            assert.deepEqual(window.send.lastCall.args, [{
                 logger: 'javascript',
                 site: 'THE BEST',
                 platform: 'javascript',
-                request: {
-                    url: 'http://localhost/?a=b',
-                    headers: {
-                        'User-Agent': 'lolbrowser'
-                    }
-                },
                 id: 'abc123',
-                extra: {key1: 'value1', key2: 'value2'}
+                extra: {key1: 'value1', key2: 'value2'},
+                events: []
             }]);
         });
 
         it('should let dataCallback override everything', function() {
             this.sinon.stub(window, 'isSetup').returns(true);
-            this.sinon.stub(window, 'makeRequest');
+            this.sinon.stub(window, 'send');
 
             globalOptions = {
-                projectId: 2,
                 logger: 'javascript',
                 site: 'THE BEST',
                 dataCallback: function() {
@@ -773,54 +761,48 @@ describe('globals', function() {
 
             globalUser = {name: 'Matt'};
 
-            send({foo: 'bar'});
-            assert.deepEqual(window.makeRequest.lastCall.args, [{
+            capture({foo: 'bar'});
+            assert.deepEqual(window.send.lastCall.args, [{
                 lol: 'ibrokeit',
                 id: 'abc123',
             }]);
         });
 
-        it('should strip empty tags/extra', function() {
+        it('should strip empty tags', function() {
             this.sinon.stub(window, 'isSetup').returns(true);
-            this.sinon.stub(window, 'makeRequest');
+            this.sinon.stub(window, 'send');
             this.sinon.stub(window, 'getHttpData').returns({
                 url: 'http://localhost/?a=b',
                 headers: {'User-Agent': 'lolbrowser'}
             });
 
             globalOptions = {
-                projectId: 2,
                 logger: 'javascript',
                 site: 'THE BEST',
                 tags: {},
                 extra: {}
             };
 
-            send({foo: 'bar', tags: {}, extra: {}});
-            assert.deepEqual(window.makeRequest.lastCall.args[0], {
-                project: '2',
+            capture({foo: 'bar', tags: {}, extra: {}});
+            assert.deepEqual(window.send.lastCall.args[0], {
                 logger: 'javascript',
                 site: 'THE BEST',
                 platform: 'javascript',
-                request: {
-                    url: 'http://localhost/?a=b',
-                    headers: {
-                        'User-Agent': 'lolbrowser'
-                    }
-                },
                 id: 'abc123',
-                foo: 'bar'
+                foo: 'bar',
+                events: [],
+                extra: {}
             });
         });
     });
 
-    describe('makeRequest', function() {
+    describe('send', function() {
         it('should load an Image', function() {
             imageCache = [];
             authQueryString = '?lol';
             globalServer = 'http://localhost/';
 
-            makeRequest({foo: 'bar'});
+            send({foo: 'bar'});
             assert.equal(imageCache.length, 1);
             assert.equal(imageCache[0].src, 'http://localhost/?lol&sentry_data=%7B%22foo%22%3A%22bar%22%7D');
         });
@@ -849,7 +831,7 @@ describe('globals', function() {
         });
 
         it('should work as advertised #integration', function() {
-            this.sinon.stub(window, 'makeRequest');
+            this.sinon.stub(window, 'send');
             var stackInfo = {
                 name: 'Error',
                 message: 'crap',
@@ -882,47 +864,7 @@ describe('globals', function() {
             };
 
             handleStackInfo(stackInfo, {foo: 'bar'});
-            assert.isTrue(window.makeRequest.calledOnce);
-            /* This is commented out because chai is broken.
-
-            assert.deepEqual(window.makeRequest.lastCall.args, [{
-                project: '2',
-                logger: 'javascript',
-                platform: 'javascript',
-                request: {
-                    url: window.location.protocol + '//' + window.location.host + window.location.pathname,
-                    querystring: window.location.search.slice(1)
-                },
-                exception: {
-                    type: 'Error',
-                    value: 'crap'
-                },
-                stacktrace: {
-                    frames: [{
-                        filename: 'http://example.com/file1.js',
-                        filename: 'file1.js',
-                        lineno: 10,
-                        colno: 11,
-                        'function': 'broken',
-                        post_context: ['line3'],
-                        context_line: 'line2',
-                        pre_context: ['line1']
-                    }, {
-                        filename: 'http://example.com/file2.js',
-                        filename: 'file2.js',
-                        lineno: 12,
-                        colno: 13,
-                        'function': 'lol',
-                        post_context: ['line6'],
-                        context_line: 'line5',
-                        pre_context: ['line4']
-                    }]
-                },
-                culprit: 'http://example.com',
-                message: 'crap at 10',
-                foo: 'bar'
-            }]);
-            */
+            assert.isTrue(window.send.calledOnce);
         });
 
         it('should ignore frames that dont have a url', function() {
@@ -1012,7 +954,6 @@ describe('Raven (public API)', function() {
             assert.isTrue(globalOptions.ignoreErrors.test('Script error'), 'it should install "Script error" by default');
             assert.isTrue(globalOptions.ignoreErrors.test('Script error.'), 'it should install "Script error." by default');
             assert.equal(globalOptions.some, 'config');
-            assert.equal(globalProject, '2');
 
             assert.isTrue(window.isSetup.calledOnce);
             assert.isFalse(TraceKit.report.subscribe.calledOnce);
@@ -1029,7 +970,6 @@ describe('Raven (public API)', function() {
             assert.isTrue(globalOptions.ignoreErrors.test('Script error'), 'it should install "Script error" by default');
             assert.isTrue(globalOptions.ignoreErrors.test('Script error.'), 'it should install "Script error." by default');
             assert.equal(globalOptions.foo, 'bar');
-            assert.equal(globalProject, '2');
             assert.isTrue(isSetup());
         });
 
@@ -1039,7 +979,6 @@ describe('Raven (public API)', function() {
             assert.equal(globalServer, '//example.com/api/2/store/');
             assert.isTrue(globalOptions.ignoreErrors.test('Script error'), 'it should install "Script error" by default');
             assert.isTrue(globalOptions.ignoreErrors.test('Script error.'), 'it should install "Script error." by default');
-            assert.equal(globalProject, '2');
             assert.isTrue(isSetup());
         });
 
@@ -1047,7 +986,6 @@ describe('Raven (public API)', function() {
             Raven.config('//abc@example.com/sentry/2');
             assert.equal(globalKey, 'abc');
             assert.equal(globalServer, '//example.com/sentry/api/2/store/');
-            assert.equal(globalProject, '2');
             assert.isTrue(isSetup());
         });
 
@@ -1291,10 +1229,15 @@ describe('Raven (public API)', function() {
 
     describe('.captureMessage', function() {
         it('should work as advertised', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(window, 'capture');
             Raven.captureMessage('lol', {foo: 'bar'});
-            assert.deepEqual(window.send.lastCall.args, [{
-                events: [{message: 'lol'}],
+            assert.deepEqual(timeline, [{
+                message: 'lol',
+                type: 'message',
+                timestamp: nowISO()
+            }]);
+            assert.isTrue(window.capture.called);
+            assert.deepEqual(window.capture.lastCall.args, [{
                 foo: 'bar'
             }]);
         });
