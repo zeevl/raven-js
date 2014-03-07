@@ -462,7 +462,7 @@ function handleStackInfo(stackInfo, options) {
     var frames = [];
 
     if (stackInfo.stack && stackInfo.stack.length) {
-        each(stackInfo.stack, function(i, stack) {
+        each(stackInfo.stack, function(_, stack) {
             var frame = normalizeFrame(stack);
             if (frame) {
                 frames.push(frame);
@@ -568,7 +568,7 @@ function processException(type, message, fileurl, lineno, frames, options) {
     if (globalOptions.ignoreErrors.test(message)) return callback(true);
 
     if (frames && frames.length) {
-        fileurl = frames[0].filename || fileurl;
+        fileurl = first(frames).filename || fileurl;
         // Sentry expects frames oldest to newest
         // and JS sends them as newest to oldest
         frames.reverse();
@@ -612,7 +612,7 @@ function objectMerge(obj1, obj2) {
 
 function resolve(obj, val) {
     try {
-        each(val.split('.'), function(i, val) {
+        each(val.split('.'), function(_, val) {
             obj = obj[val];
         });
     } catch(e) {
@@ -640,17 +640,19 @@ function getHttpData() {
 }
 
 function getExtraBrowserData() {
-    var props = {
-            window: ['innerHeight', 'innerWidth'],
-            document: []
-        },
+    var props = [
+            // obj,   name,      props
+            [window, 'window', ['innerHeight', 'innerWidth']],
+            [document, 'document', []]
+        ],
         data = {};
 
-    each(props, function(k, v) {
-        each(v, function(i, val) {
-            var resolved = resolve(k, val);
+    each(props, function(_, vals) {
+        var prop = first(vals), name = vals[1];
+        each(vals[2], function(_, val) {
+            var resolved = resolve(prop, val);
             if (!isUndefined(resolved)) {
-                data['window.' + val] = resolved;
+                data[name + '.' + val] = resolved;
             }
         });
     });
@@ -678,7 +680,7 @@ function capture(options) {
 
     var significantEvent = last(timeline);
 
-    each(['culprit', 'message'], function(i, arg) {
+    each(['culprit', 'message'], function(_, arg) {
         if (isUndefined(data[arg]) && !isUndefined(significantEvent[arg])) {
             data[arg] = significantEvent[arg];
         }

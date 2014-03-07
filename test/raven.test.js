@@ -45,6 +45,11 @@ function nowISO() {
     return '1969-01-01T00:00:00.000Z';
 }
 
+// lol, don't care
+function getExtraBrowserData() {
+    return {};
+}
+
 describe('TraceKit', function(){
     describe('error notifications', function(){
         var testMessage = "__mocha_ignore__";
