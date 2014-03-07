@@ -208,6 +208,12 @@ var Raven = {
         return Raven;
     },
 
+    /*
+     * Add a generic action to the timeline.
+     *
+     * @param {object} action The action to be appended
+     * @return {Raven}
+     */
     addAction: function(action) {
         action.type = action.type || 'message';
         action.timestamp = action.timestamp || nowISO();
@@ -215,10 +221,22 @@ var Raven = {
         return Raven;
     },
 
+    /*
+     * Add an http_request event to the global timeline
+     *
+     * @return {Raven}
+     */
     addHttp: function() {
         return Raven.addAction(getHttpData());
     },
 
+    /*
+     * Add a message to the global timeline.
+     *
+     * @param {string|object} msg The message to append to the timeline.
+     * @param {object} options A specific set of options for this message [optional]
+     * @return {Raven}
+     */
     addMessage: function(msg) {
         return Raven.addAction(isString(msg) ? {message: msg} : msg);
     },
@@ -274,7 +292,7 @@ var Raven = {
     /*
      * Manually send a message to Sentry
      *
-     * @param {string} msg A plain message to be captured in Sentry
+     * @param {string|object} msg A plain message to be captured in Sentry
      * @param {object} options A specific set of options for this message [optional]
      * @return {Raven}
      */
@@ -298,6 +316,11 @@ var Raven = {
        return Raven;
     },
 
+    /*
+     * Empty the global timeline of events.
+     *
+     * @return {Raven}
+     */
     reset: function() {
         timeline = [];
 
