@@ -415,9 +415,9 @@ function each(obj, callback) {
 
 function setAuthQueryString() {
     authQueryString =
-        '?sentry_version=6' +
-        '&sentry_client=raven-js/' + Raven.VERSION +
-        '&sentry_key=' + globalKey;
+        '?version=6' +
+        '&client=raven-js/' + Raven.VERSION +
+        '&key=' + globalKey;
 }
 
 
@@ -669,7 +669,7 @@ function capture(options) {
 
 function send(data) {
     var img = new Image(),
-        src = globalServer + authQueryString + '&sentry_data=' + encodeURIComponent(JSON.stringify(data));
+        src = globalServer + authQueryString + '&data=' + encodeURIComponent(JSON.stringify(data));
 
     img.onload = function success() {
         triggerEvent('success', {

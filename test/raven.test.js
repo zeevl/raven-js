@@ -243,7 +243,7 @@ describe('globals', function() {
 
     describe('setAuthQueryString', function() {
         it('should return a properly formatted string and cache it', function() {
-            var expected = '?sentry_version=6&sentry_client=raven-js/<%= pkg.version %>&sentry_key=abc';
+            var expected = '?version=6&client=raven-js/<%= pkg.version %>&key=abc';
             setAuthQueryString();
             assert.strictEqual(authQueryString, expected);
         });
@@ -836,7 +836,7 @@ describe('globals', function() {
 
             send({foo: 'bar'});
             assert.equal(imageCache.length, 1);
-            assert.equal(imageCache[0].src, 'http://localhost/?lol&sentry_data=%7B%22foo%22%3A%22bar%22%7D');
+            assert.equal(imageCache[0].src, 'http://localhost/?lol&data=%7B%22foo%22%3A%22bar%22%7D');
         });
     });
 
