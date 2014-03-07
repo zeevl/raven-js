@@ -34,6 +34,7 @@ var SENTRY_DSN = 'http://abc@example.com:80/2';
 
 function setupRaven() {
     Raven.config(SENTRY_DSN);
+    timeline = [];
 }
 
 // patched to return a predictable result
@@ -141,6 +142,7 @@ describe('globals', function() {
     beforeEach(function() {
         setupRaven();
         globalOptions.fetchContext = true;
+        timeline = [];
     });
 
     afterEach(function() {
@@ -151,7 +153,7 @@ describe('globals', function() {
         var data = getHttpData();
 
         it('should have a url', function() {
-                assert.equal(data.url, window.location.href);
+            assert.equal(data.url, window.location.href);
         });
 
         it('should have the user-agent header', function() {
@@ -1216,15 +1218,56 @@ describe('Raven (public API)', function() {
         });
     });
 
-    describe('.captureMessage', function() {
+    describe('.addAction', function() {
         it('should work as advertised', function() {
-            this.sinon.stub(window, 'capture');
-            Raven.captureMessage('lol', {foo: 'bar'});
+            timeline = [];
+
+            Raven.addAction({
+                type: 'message',
+                message: 'foo',
+                timestamp: '0000'
+            });
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                type: 'message',
+                message: 'foo',
+                timestamp: '0000'
+            });
+        });
+
+        it('should automatically set timestamp when empty', function() {
+            timeline = [];
+
+            Raven.addAction({
+                type: 'message',
+                message: 'foo'
+            });
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                type: 'message',
+                message: 'foo',
+                timestamp: nowISO()
+            });
+        })
+    });
+
+    describe('.addMessage', function() {
+        it('should work as advertised', function() {
+            Raven.addMessage('lol');
             assert.deepEqual(timeline, [{
                 message: 'lol',
                 type: 'message',
                 timestamp: nowISO()
             }]);
+        });
+    });
+
+    describe('.captureMessage', function() {
+        it('should work as advertised', function() {
+            this.sinon.stub(window, 'capture');
+            this.sinon.stub(Raven, 'addMessage');
+
+            Raven.captureMessage('lol', {foo: 'bar'});
             assert.isTrue(window.capture.called);
             assert.deepEqual(window.capture.lastCall.args, [{
                 foo: 'bar'
@@ -1246,6 +1289,27 @@ describe('Raven (public API)', function() {
             setupRaven();
             Raven.captureMessage('lol');
             assert.equal(Raven.lastEventId(), 'abc123');
+        });
+    });
+
+    describe('.addHttp', function() {
+        it('should work as advertised', function() {
+            this.sinon.stub(window, 'getHttpData').returns({
+                type: 'http_request',
+                url: 'http://localhost/?a=b',
+                headers: {'User-Agent': 'lolbrowser'}
+            });
+
+            timeline = [];
+
+            Raven.addHttp();
+            assert.equal(timeline.length, 1);
+            assert.deepEqual(timeline[0], {
+                type: 'http_request',
+                url: 'http://localhost/?a=b',
+                headers: {'User-Agent': 'lolbrowser'},
+                timestamp: nowISO()
+            });
         });
     });
 
@@ -1283,6 +1347,18 @@ describe('Raven (public API)', function() {
     });
 
     describe('.captureException', function() {
+        it('should add exception and send to Sentry', function() {
+            this.sinon.stub(window, 'capture');
+            this.sinon.stub(Raven, 'addException');
+            Raven.addException.callsArgWith(1, false);
+
+            var error = new Error('ffuuuu');
+            Raven.captureException(error, {foo: 'bar'});
+            assert.equal(Raven.addException.lastCall.args[0], error);
+            assert.isTrue(window.capture.calledOnce);
+            assert.deepEqual(window.capture.lastCall.args[0], {foo: 'bar'});
+        });
+
         it('should capture as a normal message if a string is passed', function() {
             this.sinon.stub(Raven, 'captureMessage');
             this.sinon.stub(TraceKit, 'report');
