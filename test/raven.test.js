@@ -638,9 +638,31 @@ describe('globals', function() {
             this.sinon.stub(window, 'isSetup').returns(false);
             this.sinon.stub(window, 'send');
 
+            timeline = [{foo: 'bar'}];
+
             capture();
             assert.isTrue(window.isSetup.calledOnce);
             assert.isFalse(window.send.calledOnce);
+        });
+
+        it('should not send if there is no data in the timeline', function() {
+            this.sinon.stub(window, 'isSetup').returns(true);
+            this.sinon.stub(window, 'send');
+
+            timeline = [];
+
+            capture();
+            assert.isFalse(window.send.calledOnce);
+        });
+
+        it('should call send if there is data in the timeline', function() {
+            this.sinon.stub(window, 'isSetup').returns(true);
+            this.sinon.stub(window, 'send');
+
+            timeline = [{foo: 'bar'}];
+
+            capture();
+            assert.isTrue(window.send.calledOnce);
         });
 
         it('should build a good data payload', function() {
@@ -652,6 +674,8 @@ describe('globals', function() {
                 site: 'THE BEST'
             };
 
+            timeline = [{foo: 'bar'}];
+
             capture({foo: 'bar'});
             assert.deepEqual(window.send.lastCall.args[0], {
                 logger: 'javascript',
@@ -660,7 +684,7 @@ describe('globals', function() {
                 id: 'abc123',
                 foo: 'bar',
                 extra: {},
-                events: []
+                events: [{foo: 'bar'}]
             });
         });
 
@@ -679,6 +703,8 @@ describe('globals', function() {
 
             globalUser = {name: 'Matt'};
 
+            timeline = [{foo: 'bar'}];
+
             capture({foo: 'bar'});
             assert.deepEqual(window.send.lastCall.args, [{
                 logger: 'javascript',
@@ -690,7 +716,7 @@ describe('globals', function() {
                 },
                 foo: 'bar',
                 extra: {},
-                events: []
+                events: [{foo: 'bar'}]
             }]);
         });
 
@@ -708,6 +734,7 @@ describe('globals', function() {
                 tags: {tag1: 'value1'}
             };
 
+            timeline = [{foo: 'bar'}];
 
             capture({tags: {tag2: 'value2'}});
             assert.deepEqual(window.send.lastCall.args, [{
@@ -716,7 +743,7 @@ describe('globals', function() {
                 platform: 'javascript',
                 id: 'abc123',
                 tags: {tag1: 'value1', tag2: 'value2'},
-                events: [],
+                events: [{foo: 'bar'}],
                 extra: {}
             }]);
         });
@@ -735,6 +762,7 @@ describe('globals', function() {
                 extra: {key1: 'value1'}
             };
 
+            timeline = [{foo: 'bar'}];
 
             capture({extra: {key2: 'value2'}});
             assert.deepEqual(window.send.lastCall.args, [{
@@ -743,7 +771,7 @@ describe('globals', function() {
                 platform: 'javascript',
                 id: 'abc123',
                 extra: {key1: 'value1', key2: 'value2'},
-                events: []
+                events: [{foo: 'bar'}]
             }]);
         });
 
@@ -760,6 +788,8 @@ describe('globals', function() {
             };
 
             globalUser = {name: 'Matt'};
+
+            timeline = [{foo: 'bar'}];
 
             capture({foo: 'bar'});
             assert.deepEqual(window.send.lastCall.args, [{
@@ -783,6 +813,8 @@ describe('globals', function() {
                 extra: {}
             };
 
+            timeline = [{foo: 'bar'}];
+
             capture({foo: 'bar', tags: {}, extra: {}});
             assert.deepEqual(window.send.lastCall.args[0], {
                 logger: 'javascript',
@@ -790,7 +822,7 @@ describe('globals', function() {
                 platform: 'javascript',
                 id: 'abc123',
                 foo: 'bar',
-                events: [],
+                events: [{foo: 'bar'}],
                 extra: {}
             });
         });

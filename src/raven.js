@@ -622,7 +622,7 @@ function getExtraBrowserData() {
 }
 
 function capture(options) {
-    if (!isSetup() || !timeline) return;
+    if (!isSetup() || !timeline.length) return;
 
     var data = objectMerge({
         logger: globalOptions.logger,
