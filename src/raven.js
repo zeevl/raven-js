@@ -212,19 +212,42 @@ var Raven = {
         action.type = action.type || 'message';
         action.timestamp = action.timestamp || nowISO();
         timeline.push(action);
+        return Raven;
     },
 
     addHttp: function() {
-        Raven.addAction(getHttpData());
+        return Raven.addAction(getHttpData());
     },
 
     addMessage: function(msg) {
-        Raven.addAction(isString(msg) ? {message: msg} : msg);
+        return Raven.addAction(isString(msg) ? {message: msg} : msg);
     },
 
-    addException: function(exc) {
-        exc.type = 'exception';
-        Raven.addAction(exc);
+    /*
+     * Add an exception to the global timeline.
+     *
+     * @param {Error} exc An exception to be logged
+     * @param {function} cb A callback for after the exception has been added to the timeline
+     * @return {Raven}
+     */
+    addException: function(exc, cb) {
+        // Store the raw exception object for potential debugging and introspection
+        lastCapturedException = exc;
+
+        // TraceKit.report will re-raise any exception passed to it,
+        // which means you have to wrap it in try/catch. Instead, we
+        // can wrap it here and only re-raise if TraceKit.report
+        // raises an exception different from the one we asked to
+        // report on.
+        try {
+            TraceKit.report(exc, {cb: cb});
+        } catch(exc1) {
+            if(exc !== exc1) {
+                throw exc1;
+            }
+        }
+
+        return Raven;
     },
 
     /*
@@ -238,21 +261,12 @@ var Raven = {
         // If a string is passed through, recall as a message
         if (isString(ex)) return Raven.captureMessage(ex, options);
 
-        // Store the raw exception object for potential debugging and introspection
-        lastCapturedException = ex;
-
-        // TraceKit.report will re-raise any exception passed to it,
-        // which means you have to wrap it in try/catch. Instead, we
-        // can wrap it here and only re-raise if TraceKit.report
-        // raises an exception different from the one we asked to
-        // report on.
-        try {
-            TraceKit.report(ex, options);
-        } catch(ex1) {
-            if(ex !== ex1) {
-                throw ex1;
+        Raven.addException(ex, function(err) {
+            if (!err) {
+                // Fire away!
+                capture(options);
             }
-        }
+        });
 
         return Raven;
     },
@@ -434,8 +448,7 @@ function handleStackInfo(stackInfo, options) {
     }
 
     triggerEvent('handle', {
-        stackInfo: stackInfo,
-        options: options
+        stackInfo: stackInfo
     });
 
     processException(
@@ -516,17 +529,20 @@ function extractContextFromFrame(frame) {
     ];
 }
 
+function noop() {}
+
 function processException(type, message, fileurl, lineno, frames, options) {
-    var stacktrace, label, i;
+    var stacktrace, label, i,
+        callback = options && options.cb || noop;
 
     // Sometimes an exception is getting logged in Sentry as
     // <no message value>
     // This can only mean that the message was falsey since this value
     // is hardcoded into Sentry itself.
     // At this point, if the message is falsey, we bail since it's useless
-    if (!message) return;
+    if (!message) return callback(true);
 
-    if (globalOptions.ignoreErrors.test(message)) return;
+    if (globalOptions.ignoreErrors.test(message)) return callback(true);
 
     if (frames && frames.length) {
         fileurl = frames[0].filename || fileurl;
@@ -543,24 +559,22 @@ function processException(type, message, fileurl, lineno, frames, options) {
         };
     }
 
-    if (globalOptions.ignoreUrls && globalOptions.ignoreUrls.test(fileurl)) return;
-    if (globalOptions.whitelistUrls && !globalOptions.whitelistUrls.test(fileurl)) return;
+    if (globalOptions.ignoreUrls && globalOptions.ignoreUrls.test(fileurl)) return callback(true);
+    if (globalOptions.whitelistUrls && !globalOptions.whitelistUrls.test(fileurl)) return callback(true);
 
     label = lineno ? message + ' at ' + lineno : message;
 
-    Raven.addException({
+    Raven.addAction({
+        type: 'exception',
         exc_type: type,
         value: message,
+        culprit: fileurl,
+        message: label,
         stacktrace: stacktrace
     });
 
-    // Fire away!
-    capture(
-        objectMerge({
-            culprit: fileurl,
-            message: label
-        }, options)
-    );
+    // Fire off the callback
+    callback(false);
 }
 
 function objectMerge(obj1, obj2) {
@@ -621,6 +635,14 @@ function getExtraBrowserData() {
     return data;
 }
 
+function first(array) {
+    return array[0];
+}
+
+function last(array) {
+    return array[array.length - 1];
+}
+
 function capture(options) {
     if (!isSetup() || !timeline.length) return;
 
@@ -630,6 +652,14 @@ function capture(options) {
         platform: 'javascript',
         events: timeline,
     }, options);
+
+    var significantEvent = last(timeline);
+
+    each(['culprit', 'message'], function(i, arg) {
+        if (isUndefined(data[arg]) && !isUndefined(significantEvent[arg])) {
+            data[arg] = significantEvent[arg];
+        }
+    });
 
     // Merge in the tags and extra separately since objectMerge doesn't handle a deep merge
     data.tags = objectMerge(globalOptions.tags, data.tags);

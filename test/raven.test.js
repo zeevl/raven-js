@@ -472,43 +472,43 @@ describe('globals', function() {
 
     describe('processException', function() {
         it('should respect `ignoreErrors`', function() {
-            this.sinon.stub(window, 'capture');
+            var spy = this.sinon.spy();
 
             globalOptions.ignoreErrors = joinRegExp(['e1', 'e2']);
-            processException('Error', 'e1', 'http://example.com', []);
-            assert.isFalse(window.capture.called);
-            processException('Error', 'e2', 'http://example.com', []);
-            assert.isFalse(window.capture.called);
-            processException('Error', 'error', 'http://example.com', []);
-            assert.isTrue(window.capture.calledOnce);
+            processException('Error', 'e1', 'http://example.com', 10, [], {cb: spy});
+            assert.isTrue(spy.lastCall.args[0]);
+            processException('Error', 'e2', 'http://example.com', 10, [], {cb: spy});
+            assert.isTrue(spy.lastCall.args[0]);
+            processException('Error', 'error', 'http://example.com', 10, [], {cb: spy});
+            assert.isFalse(spy.lastCall.args[0])
         });
 
         it('should respect `ignoreUrls`', function() {
-            this.sinon.stub(window, 'capture');
+            var spy = this.sinon.spy();
 
             globalOptions.ignoreUrls = joinRegExp([/.+?host1.+/, /.+?host2.+/]);
-            processException('Error', 'error', 'http://host1/', []);
-            assert.isFalse(window.capture.called);
-            processException('Error', 'error', 'http://host2/', []);
-            assert.isFalse(window.capture.called);
-            processException('Error', 'error', 'http://host3/', []);
-            assert.isTrue(window.capture.calledOnce);
+            processException('Error', 'error', 'http://host1/', 10, [], {cb: spy});
+            assert.isTrue(spy.lastCall.args[0]);
+            processException('Error', 'error', 'http://host2/', 10, [], {cb: spy});
+            assert.isTrue(spy.lastCall.args[0]);
+            processException('Error', 'error', 'http://host3/', 10, [], {cb: spy});
+            assert.isFalse(spy.lastCall.args[0]);
         });
 
         it('should respect `whitelistUrls`', function() {
-            this.sinon.stub(window, 'capture');
+            var spy = this.sinon.spy();
 
             globalOptions.whitelistUrls = joinRegExp([/.+?host1.+/, /.+?host2.+/]);
-            processException('Error', 'error', 'http://host1/', []);
-            assert.equal(window.capture.callCount, 1);
-            processException('Error', 'error', 'http://host2/', []);
-            assert.equal(window.capture.callCount, 2);
-            processException('Error', 'error', 'http://host3/', []);
-            assert.equal(window.capture.callCount, 2);
+            processException('Error', 'error', 'http://host1/', 10, [], {cb: spy});
+            assert.isFalse(spy.lastCall.args[0]);
+            processException('Error', 'error', 'http://host2/', 10, [], {cb: spy});
+            assert.isFalse(spy.lastCall.args[0]);
+            processException('Error', 'error', 'http://host3/', 10, [], {cb: spy});
+            assert.isTrue(spy.lastCall.args[0]);
         });
 
-        it('should send a proper payload with frames', function() {
-            this.sinon.stub(window, 'capture');
+        it('should add a proper action to the timeline with frames', function() {
+            this.sinon.stub(Raven, 'addAction');
 
             var frames = [
                 {
@@ -522,114 +522,66 @@ describe('globals', function() {
             framesFlipped.reverse();
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, frames.slice(0), {});
-            assert.isTrue(window.capture.called);
-            assert.equal(timeline.length, 1);
-            assert.deepEqual(timeline[0], {
+            assert.deepEqual(Raven.addAction.lastCall.args, [{
+                type: 'exception',
                 exc_type: 'Error',
                 value: 'lol',
-                stacktrace: {
-                    frames: framesFlipped
-                },
-                type: 'exception',
-                timestamp: nowISO()
-            });
-            assert.deepEqual(window.capture.lastCall.args, [{
-                culprit: 'http://example.com/file1.js',
-                message: 'lol at 10'
-            }]);
-
-            timeline = [];
-
-            processException('Error', 'lol', '', 10, frames.slice(0), {});
-            assert.isTrue(window.capture.called);
-            assert.equal(timeline.length, 1);
-            assert.deepEqual(timeline[0], {
-                exc_type: 'Error',
-                value: 'lol',
-                stacktrace: {
-                    frames: framesFlipped
-                },
-                type: 'exception',
-                timestamp: nowISO()
-            });
-            assert.deepEqual(window.capture.lastCall.args, [{
-                culprit: 'http://example.com/file1.js',
-                message: 'lol at 10'
-            }]);
-
-            timeline = [];
-
-            processException('Error', 'lol', '', 10, frames.slice(0), {extra: {foo: 'bar'}});
-            assert.isTrue(window.capture.called);
-            assert.equal(timeline.length, 1);
-            assert.deepEqual(timeline[0], {
-                exc_type: 'Error',
-                value: 'lol',
-                stacktrace: {
-                    frames: framesFlipped
-                },
-                type: 'exception',
-                timestamp: nowISO()
-            });
-            assert.deepEqual(window.capture.lastCall.args, [{
                 culprit: 'http://example.com/file1.js',
                 message: 'lol at 10',
-                extra: {foo: 'bar'}
+                stacktrace: {
+                    frames: framesFlipped
+                },
+            }]);
+
+            processException('Error', 'lol', '', 10, frames.slice(0), {});
+            assert.deepEqual(Raven.addAction.lastCall.args, [{
+                type: 'exception',
+                exc_type: 'Error',
+                value: 'lol',
+                culprit: 'http://example.com/file1.js',
+                message: 'lol at 10',
+                stacktrace: {
+                    frames: framesFlipped
+                },
+            }]);
+
+            processException('Error', 'lol', '', 10, frames.slice(0), {extra: {foo: 'bar'}});
+            assert.deepEqual(Raven.addAction.lastCall.args, [{
+                type: 'exception',
+                exc_type: 'Error',
+                value: 'lol',
+                culprit: 'http://example.com/file1.js',
+                message: 'lol at 10',
+                stacktrace: {
+                    frames: framesFlipped
+                },
             }]);
         });
 
-        it('should send a proper payload without frames', function() {
-            this.sinon.stub(window, 'capture');
+        it('should add a proper action to the timeline without frames', function() {
+            this.sinon.stub(Raven, 'addAction');
 
             processException('Error', 'lol', 'http://example.com/override.js', 10, [], {});
-            assert.isTrue(window.capture.called);
-            assert.equal(timeline.length, 1);
-            assert.deepEqual(timeline[0], {
+            assert.deepEqual(Raven.addAction.lastCall.args, [{
+                type: 'exception',
                 exc_type: 'Error',
                 value: 'lol',
-                stacktrace: {
-                    frames: [{
-                        filename: 'http://example.com/override.js',
-                        lineno: 10
-                    }]
-                },
-                type: 'exception',
-                timestamp: nowISO()
-            });
-            assert.deepEqual(window.capture.lastCall.args, [{
-                culprit: 'http://example.com/override.js',
-                message: 'lol at 10'
-            }]);
-
-            timeline = [];
-
-            processException('Error', 'lol', 'http://example.com/override.js', 10, [], {extra: {foo: 'bar'}});
-            assert.isTrue(window.capture.called);
-            assert.equal(timeline.length, 1);
-            assert.deepEqual(timeline[0], {
-                exc_type: 'Error',
-                value: 'lol',
-                stacktrace: {
-                    frames: [{
-                        filename: 'http://example.com/override.js',
-                        lineno: 10
-                    }]
-                },
-                type: 'exception',
-                timestamp: nowISO()
-            });
-            assert.deepEqual(window.capture.lastCall.args, [{
                 culprit: 'http://example.com/override.js',
                 message: 'lol at 10',
-                extra: {foo: 'bar'}
+                stacktrace: {
+                    frames: [{
+                        filename: 'http://example.com/override.js',
+                        lineno: 10
+                    }]
+                },
             }]);
         });
 
         it('should ignored falsey messages', function() {
-            this.sinon.stub(window, 'capture');
+            this.sinon.stub(Raven, 'addMessage');
 
             processException('Error', '', 'http://example.com', []);
-            assert.isFalse(window.capture.called);
+            assert.isFalse(Raven.addMessage.called);
         });
     });
 
@@ -863,7 +815,7 @@ describe('globals', function() {
         });
 
         it('should work as advertised #integration', function() {
-            this.sinon.stub(window, 'send');
+            this.sinon.stub(Raven, 'addAction');
             var stackInfo = {
                 name: 'Error',
                 message: 'crap',
@@ -896,7 +848,7 @@ describe('globals', function() {
             };
 
             handleStackInfo(stackInfo, {foo: 'bar'});
-            assert.isTrue(window.send.calledOnce);
+            assert.isTrue(Raven.addAction.calledOnce);
         });
 
         it('should ignore frames that dont have a url', function() {
@@ -1292,19 +1244,19 @@ describe('Raven (public API)', function() {
         });
     });
 
-    describe('.captureException', function() {
+    describe('.addException', function() {
         it('should call TraceKit.report', function() {
             var error = new Error('crap');
             this.sinon.stub(TraceKit, 'report');
-            Raven.captureException(error, {foo: 'bar'});
+            Raven.addException(error);
             assert.isTrue(TraceKit.report.calledOnce);
-            assert.deepEqual(TraceKit.report.lastCall.args, [error, {foo: 'bar'}]);
+            assert.deepEqual(TraceKit.report.lastCall.args, [error, {cb: undefined}]);
         });
 
         it('should store the last exception', function() {
             var error = new Error('crap');
             this.sinon.stub(TraceKit, 'report');
-            Raven.captureException(error);
+            Raven.addException(error);
             assert.equal(Raven.lastException(), error);
         });
 
@@ -1312,7 +1264,7 @@ describe('Raven (public API)', function() {
             var error = new Error('crap');
             this.sinon.stub(TraceKit, 'report').throws(error);
             // this would raise if the errors didn't match
-            Raven.captureException(error, {foo: 'bar'});
+            Raven.addException(error, {foo: 'bar'});
             assert.isTrue(TraceKit.report.calledOnce);
         });
 
@@ -1320,10 +1272,12 @@ describe('Raven (public API)', function() {
             var error = new Error('crap1');
             this.sinon.stub(TraceKit, 'report').throws(error);
             assert.throws(function() {
-                Raven.captureException(new Error('crap2'));
+                Raven.addException(new Error('crap2'));
             }, error);
         });
+    });
 
+    describe('.captureException', function() {
         it('should capture as a normal message if a string is passed', function() {
             this.sinon.stub(Raven, 'captureMessage');
             this.sinon.stub(TraceKit, 'report');
