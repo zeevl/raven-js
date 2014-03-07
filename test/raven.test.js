@@ -89,7 +89,7 @@ describe('TraceKit', function(){
             // to TraceKit.report, so we parameterize it for the tests.
             TraceKit.collectWindowErrors = collectWindowErrors;
 
-            subscriptionHandler = function(stackInfo, extra) {
+            subscriptionHandler = function(stackInfo, isWindowError, extra) {
                 assert.equal(extra, extraVal);
                 numDone++;
                 if (numDone == numReports) {
@@ -482,11 +482,11 @@ describe('globals', function() {
             var spy = this.sinon.spy();
 
             globalOptions.ignoreErrors = joinRegExp(['e1', 'e2']);
-            processException('Error', 'e1', 'http://example.com', 10, [], {cb: spy});
+            processException('Error', 'e1', 'http://example.com', 10, [], false, {cb: spy});
             assert.isTrue(spy.lastCall.args[0]);
-            processException('Error', 'e2', 'http://example.com', 10, [], {cb: spy});
+            processException('Error', 'e2', 'http://example.com', 10, [], false, {cb: spy});
             assert.isTrue(spy.lastCall.args[0]);
-            processException('Error', 'error', 'http://example.com', 10, [], {cb: spy});
+            processException('Error', 'error', 'http://example.com', 10, [], false, {cb: spy});
             assert.isFalse(spy.lastCall.args[0])
         });
 
@@ -494,11 +494,11 @@ describe('globals', function() {
             var spy = this.sinon.spy();
 
             globalOptions.ignoreUrls = joinRegExp([/.+?host1.+/, /.+?host2.+/]);
-            processException('Error', 'error', 'http://host1/', 10, [], {cb: spy});
+            processException('Error', 'error', 'http://host1/', 10, [], false, {cb: spy});
             assert.isTrue(spy.lastCall.args[0]);
-            processException('Error', 'error', 'http://host2/', 10, [], {cb: spy});
+            processException('Error', 'error', 'http://host2/', 10, [], false, {cb: spy});
             assert.isTrue(spy.lastCall.args[0]);
-            processException('Error', 'error', 'http://host3/', 10, [], {cb: spy});
+            processException('Error', 'error', 'http://host3/', 10, [], false, {cb: spy});
             assert.isFalse(spy.lastCall.args[0]);
         });
 
@@ -506,11 +506,11 @@ describe('globals', function() {
             var spy = this.sinon.spy();
 
             globalOptions.whitelistUrls = joinRegExp([/.+?host1.+/, /.+?host2.+/]);
-            processException('Error', 'error', 'http://host1/', 10, [], {cb: spy});
+            processException('Error', 'error', 'http://host1/', 10, [], false, {cb: spy});
             assert.isFalse(spy.lastCall.args[0]);
-            processException('Error', 'error', 'http://host2/', 10, [], {cb: spy});
+            processException('Error', 'error', 'http://host2/', 10, [], false, {cb: spy});
             assert.isFalse(spy.lastCall.args[0]);
-            processException('Error', 'error', 'http://host3/', 10, [], {cb: spy});
+            processException('Error', 'error', 'http://host3/', 10, [], false, {cb: spy});
             assert.isTrue(spy.lastCall.args[0]);
         });
 
@@ -528,7 +528,7 @@ describe('globals', function() {
 
             framesFlipped.reverse();
 
-            processException('Error', 'lol', 'http://example.com/override.js', 10, frames.slice(0), {});
+            processException('Error', 'lol', 'http://example.com/override.js', 10, frames.slice(0), false, {});
             assert.deepEqual(Raven.addAction.lastCall.args, [{
                 type: 'exception',
                 exc_type: 'Error',
@@ -540,7 +540,7 @@ describe('globals', function() {
                 },
             }]);
 
-            processException('Error', 'lol', '', 10, frames.slice(0), {});
+            processException('Error', 'lol', '', 10, frames.slice(0), false, {});
             assert.deepEqual(Raven.addAction.lastCall.args, [{
                 type: 'exception',
                 exc_type: 'Error',
@@ -552,7 +552,7 @@ describe('globals', function() {
                 },
             }]);
 
-            processException('Error', 'lol', '', 10, frames.slice(0), {extra: {foo: 'bar'}});
+            processException('Error', 'lol', '', 10, frames.slice(0), false, {extra: {foo: 'bar'}});
             assert.deepEqual(Raven.addAction.lastCall.args, [{
                 type: 'exception',
                 exc_type: 'Error',
@@ -568,7 +568,7 @@ describe('globals', function() {
         it('should add a proper action to the timeline without frames', function() {
             this.sinon.stub(Raven, 'addAction');
 
-            processException('Error', 'lol', 'http://example.com/override.js', 10, [], {});
+            processException('Error', 'lol', 'http://example.com/override.js', 10, [], false, {});
             assert.deepEqual(Raven.addAction.lastCall.args, [{
                 type: 'exception',
                 exc_type: 'Error',
@@ -815,14 +815,15 @@ describe('globals', function() {
                 ]
             };
 
-            handleStackInfo(stackInfo, {foo: 'bar'});
+            handleStackInfo(stackInfo, false, {foo: 'bar'});
             assert.deepEqual(window.processException.lastCall.args, [
-                'Matt', 'hey', 'http://example.com', 10, [frame, frame], {foo: 'bar'}
+                'Matt', 'hey', 'http://example.com', 10, [frame, frame], false, {foo: 'bar'}
             ]);
         });
 
         it('should work as advertised #integration', function() {
             this.sinon.stub(Raven, 'addAction');
+            this.sinon.stub(window, 'capture');
             var stackInfo = {
                 name: 'Error',
                 message: 'crap',
@@ -854,8 +855,9 @@ describe('globals', function() {
                 ]
             };
 
-            handleStackInfo(stackInfo, {foo: 'bar'});
+            handleStackInfo(stackInfo, false, {foo: 'bar'});
             assert.isTrue(Raven.addAction.calledOnce);
+            assert.isFalse(window.capture.called);
         });
 
         it('should ignore frames that dont have a url', function() {
@@ -870,9 +872,9 @@ describe('globals', function() {
                 stack: new Array(2)
             };
 
-            handleStackInfo(stackInfo, {foo: 'bar'});
+            handleStackInfo(stackInfo, false, {foo: 'bar'});
             assert.deepEqual(window.processException.lastCall.args, [
-                'Matt', 'hey', 'http://example.com', 10, [], {foo: 'bar'}
+                'Matt', 'hey', 'http://example.com', 10, [], false, {foo: 'bar'}
             ]);
         });
 
@@ -891,7 +893,7 @@ describe('globals', function() {
             handleStackInfo(stackInfo);
             assert.isFalse(window.normalizeFrame.called);
             assert.deepEqual(window.processException.lastCall.args, [
-                'Matt', 'hey', 'http://example.com', 10, [], undefined
+                'Matt', 'hey', 'http://example.com', 10, [], undefined, undefined
             ]);
         });
     });

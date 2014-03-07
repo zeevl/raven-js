@@ -120,7 +120,7 @@ TraceKit.report = (function reportModuleWrapper() {
         for (var i in handlers) {
             if (hasKey(handlers, i)) {
                 try {
-                    handlers[i].apply(null, [stack].concat(_slice.call(arguments, 2)));
+                    handlers[i].apply(null, arguments);
                 } catch (inner) {
                     exception = inner;
                 }

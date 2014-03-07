@@ -462,7 +462,7 @@ function setAuthQueryString() {
 }
 
 
-function handleStackInfo(stackInfo, options) {
+function handleStackInfo(stackInfo, isWindowError, options) {
     var frames = [];
 
     if (stackInfo.stack && stackInfo.stack.length) {
@@ -484,6 +484,7 @@ function handleStackInfo(stackInfo, options) {
         stackInfo.url,
         stackInfo.lineno,
         frames,
+        isWindowError,
         options
     );
 }
@@ -558,7 +559,7 @@ function extractContextFromFrame(frame) {
 
 function noop() {}
 
-function processException(type, message, fileurl, lineno, frames, options) {
+function processException(type, message, fileurl, lineno, frames, isWindowError, options) {
     var stacktrace, label, i,
         callback = options && options.cb || noop;
 
@@ -602,6 +603,13 @@ function processException(type, message, fileurl, lineno, frames, options) {
 
     // Fire off the callback
     callback(false);
+
+    // if the error is from window.onerror, we need to treat it as significant
+    // and actually send it to Sentry. Normally, this is handled within
+    // Raven.captureException, but window.onerror won't trigger that.
+    if (isWindowError) {
+        capture(options);
+    }
 }
 
 function objectMerge(obj1, obj2) {
