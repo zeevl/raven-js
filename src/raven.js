@@ -719,6 +719,8 @@ function capture(options) {
     lastEventId = data.id || (data.id = uuid4());
 
     send(data);
+
+    timeline = [];
 }
 
 
