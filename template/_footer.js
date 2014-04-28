@@ -1,3 +1,4 @@
+// Expose Raven to the world
 
 // AMD
 if (typeof define === 'function' && define.amd) {
@@ -7,7 +8,6 @@ else if (typeof module == 'object') {
     module.exports = Raven;
 }
 else {
-    // Expose Raven to the world
-    window.Raven = Raven;  
+    window.Raven = Raven;
 }
 })(this);
